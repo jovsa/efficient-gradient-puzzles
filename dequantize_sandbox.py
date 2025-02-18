@@ -37,6 +37,7 @@ def _dequantize_nf4_kernel(
     tl.store(output_ptr + output_offset, dequantized)
 
 def _dequantize_nf4(weight, quant_state):
+
     device = weight.device
     absmax = quant_state[1]
     nf4_lut = quant_state[0]

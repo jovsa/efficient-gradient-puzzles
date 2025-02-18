@@ -4,6 +4,7 @@
 
 Contains a collection of puzzles that help me experiment and learn about:
 * Convert `nf4` to Triton
+    * `f4_to_f16.py` and `dequantize_sandbox.py`
 * Make QLoRA Work with FSDP2
 * Make torch.compile Work Without Graph Breaks for QLoRA
 * Memory Efficient Backprop

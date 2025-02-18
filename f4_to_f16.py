@@ -105,27 +105,78 @@ def unsloth_dequantize(weight):
 
 
 @triton.jit
-def _dequantize_nf4_kernel():
-    pass
+def _dequantize_nf4_kernel(
+    input_ptr,
+    absmax_ptr,
+    lut_ptr,
+    output_ptr,
+    blocksize,
+    n_blocks,
+    BLOCK_SIZE: tl.constexpr,
+    OUTPUT_TYPE: tl.constexpr,
+):
+    block_idx = tl.program_id(0)
+    if block_idx >= n_blocks:
+        return
+
+    absmax_val = tl.load(absmax_ptr + block_idx).to(tl.float32)
+
+    input_offset = block_idx * (BLOCK_SIZE // 8)
+
+    k = tl.arange(0, BLOCK_SIZE)
+    int32_index = k // 8
+    position_in_int32 = k % 8
+    shift = (28 - position_in_int32 * 4)
+    mask = 0xF
+
+    int_val = tl.load(input_ptr + input_offset + int32_index)
+    index = (int_val >> shift) & mask
+
+    dequantized = tl.load(lut_ptr + index) * absmax_val
+
+    dequantized = dequantized.to(OUTPUT_TYPE)
+    output_offset = block_idx * BLOCK_SIZE + k
+    tl.store(output_ptr + output_offset, dequantized)
 
 
 def _dequantize_nf4(weight, quant_state):
-    pass
+    device = weight.device
+    absmax = quant_state.absmax
+    nf4_lut = quant_state[0] # TODO: this is wrong
 
+    assert weight.dtype in (torch.uint8, torch.bfloat16), "weight must be uint8 or bfloat16"
+    assert absmax.dtype == torch.float16, "absmax must be float16"
+    assert nf4_lut.dtype == torch.float32, "nf4_lut must be float32"
+    assert nf4_lut.numel() == 16, "nf4_lut must have 16 elements"
+
+    n_blocks = absmax.shape[0]
+    output = torch.empty(n_blocks * 64, dtype=torch.float16, device=device)
+
+    input = weight.view(torch.int32)
+    grid = (n_blocks,)
+
+    _dequantize_nf4_kernel[grid](
+        input, absmax, nf4_lut, output,
+        blocksize=64,
+        n_blocks=n_blocks,
+        BLOCK_SIZE=64,
+        OUTPUT_TYPE=tl.float16,
+    )
+    return output
 
 def dequantize_nf4(weight):
     return _dequantize_nf4(weight.weight.data, weight.weight.quant_state)
 
 
 if __name__ == "__main__":
-    res = test_dequantize(unsloth_dequantize)
-    print(f"unsloth_dequantize: {res}s")
-    res = test_dequantize(peft_dequantize)
-    print(f"peft_dequantize: {res}s")
+    # res = test_dequantize(unsloth_dequantize)
+    # print(f"unsloth_dequantize: {res}s")
+    # res = test_dequantize(peft_dequantize)
+    # print(f"peft_dequantize: {res}s")
 
     ### TEST IT BELOW:
-    # res = test_dequantize(dequantize_nf4)
-    # print(f"dequantize_nf4: {res}s")
+    res = test_dequantize(dequantize_nf4)
+    print(f"dequantize_nf4: {res}s")
 
     ### CALCULATE SPEEDUP (hopefully 1.15x faster or more)
-    # print(f"Speedup: {test_dequantize(unsloth_dequantize) / test_dequantize(dequantize_nf4)}")
+    print(f"Speedup: {test_dequantize(unsloth_dequantize) / test_dequantize(dequantize_nf4)}")
