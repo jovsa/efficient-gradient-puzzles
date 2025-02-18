@@ -3,7 +3,7 @@
 > This is a work in progress. Not all the code is working and intended to be used as is.
 
 Contains a collection of puzzles that help me experiment and learn about:
-* Convert nf4 to Triton
+* Convert `nf4` to Triton
 * Make QLoRA Work with FSDP2
 * Make torch.compile Work Without Graph Breaks for QLoRA
 * Memory Efficient Backprop
